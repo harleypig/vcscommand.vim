@@ -342,6 +342,17 @@ silent do VCSCommand User VCSPluginInit
 let g:VCSCOMMAND_IDENTIFY_EXACT = 1
 let g:VCSCOMMAND_IDENTIFY_INEXACT = -1
 
+let g:VCSCOMMAND_MODIFICATION_STATUS_MODIFIED = '+'
+let g:VCSCOMMAND_MODIFICATION_STATUS_UP_TO_DATE = ''
+let g:VCSCOMMAND_MODIFICATION_STATUS_ADDED = 'A'
+let g:VCSCOMMAND_MODIFICATION_STATUS_REMOVED = 'R'
+let g:VCSCOMMAND_MODIFICATION_STATUS_MOVED = 'M'
+let g:VCSCOMMAND_MODIFICATION_STATUS_UNKNOWN = 'U'
+let g:VCSCOMMAND_MODIFICATION_STATUS_NEEDS_PATCH = 'P'
+let g:VCSCOMMAND_MODIFICATION_STATUS_IGNORED = 'I'
+let g:VCSCOMMAND_MODIFICATION_STATUS_CONFLICTED = 'C'
+let g:VCSCOMMAND_MODIFICATION_STATUS_ERROR = 'E'
+
 " Section: Script variable initialization {{{1
 
 " Hidden functions for use by extensions
@@ -583,7 +594,7 @@ function! s:SetupBuffer()
 		return
 	endif
 
-	if !isdirectory(@%) && (strlen(&buftype) > 0 || !filereadable(@%))
+	if !isdirectory(@%) && strlen(&buftype) > 0
 		" No special status for special buffers other than directory buffers.
 		return
 	endif
@@ -593,16 +604,8 @@ function! s:SetupBuffer()
 		return
 	endif
 
-	try
-		let vcsType = VCSCommandGetVCSType(bufnr('%'))
-		let b:VCSCommandBufferInfo = s:plugins[vcsType][1].GetBufferInfo()
-		silent do VCSCommand User VCSBufferSetup
-	catch /No suitable plugin/
-		" This is not a VCS-controlled file.
-		let b:VCSCommandBufferInfo = []
-	endtry
-
 	let b:VCSCommandBufferSetup = 1
+  call VCSCommandUpdateBufferInfo()
 endfunction
 
 " Function: s:MarkOrigBufferForSetup(buffer) {{{2
@@ -1249,7 +1252,10 @@ function! VCSCommandEnableBufferSetup()
 	let g:VCSCommandEnableBufferSetup = 1
 	augroup VCSCommandPlugin
 		au!
+    " Install buffer variables when opening buffers
 		au BufEnter * call s:SetupBuffer()
+    " Update buffer information when the buffer is written (new file or existing file)
+    au BufWritePost,FileWritePost * call s:SetupBuffer() | call VCSCommandUpdateBufferInfo()
 	augroup END
 
 	" Only auto-load if the plugin is fully loaded.  This gives other plugins a
@@ -1257,6 +1263,31 @@ function! VCSCommandEnableBufferSetup()
 	if g:loaded_VCSCommand == 2
 		call s:SetupBuffer()
 	endif
+endfunction
+
+" Function: VCSCommandUpdateBufferInfo() {{{2
+" Update the buffer information after the buffer has been set up
+
+function! VCSCommandUpdateBufferInfo()
+	if (!exists('b:VCSCommandBufferSetup') || !b:VCSCommandBufferSetup)
+		" This buffer has not been set up - error
+		throw "You can only update the buffer info after the buffer has been set up!"
+	endif
+  
+	try
+    " Get VCS type
+		let vcsType = VCSCommandGetVCSType(bufnr('%'))
+    " Get general buffer info
+    let b:VCSCommandBufferInfo = s:plugins[vcsType][1].GetBufferInfo()
+    " Get buffer modification status
+    if exists( 's:plugins[vcsType][1].GetModificationStatus()' )
+      let b:VCSCommandBufferModificationStatus = s:plugins[vcsType][1].GetModificationStatus()
+    endif
+		silent do VCSCommand User VCSBufferSetup
+	catch /No suitable plugin/
+		" This is not a VCS-controlled file.
+		let b:VCSCommandBufferInfo = []
+	endtry
 endfunction
 
 " Function: VCSCommandGetStatusLine() {{{2
@@ -1304,6 +1335,7 @@ com! -nargs=* VCSVimDiff call s:VCSVimDiff(<f-args>)
 " Section: VCS buffer management commands {{{2
 com! VCSCommandDisableBufferSetup call VCSCommandDisableBufferSetup()
 com! VCSCommandEnableBufferSetup call VCSCommandEnableBufferSetup()
+com! VCSCommandUpdateBufferInfo call VCSCommandUpdateBufferInfo()
 
 " Allow reloading VCSCommand.vim
 com! VCSReload let savedPlugins = s:plugins|let s:plugins = {}|call s:ClearMenu()|unlet! g:loaded_VCSCommand|runtime plugin/vcscommand.vim|for plugin in values(savedPlugins)|execute 'source' plugin[0]|endfor|unlet savedPlugins

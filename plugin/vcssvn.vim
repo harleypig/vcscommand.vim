@@ -197,17 +197,72 @@ function! s:svnFunctions.GetBufferInfo()
 		return ['Unknown']
 	endif
 
-	let [flags, revision, repository] = matchlist(statusText, '^\(.\{9}\)\s*\(\d\+\)\s\+\(\d\+\)')[1:3]
-	if revision == ''
-		" Error
+  try
+  	let [flags, revision, repository] = matchlist(statusText, '^\(.\{9}\)\s*\(\d\+\)\s\+\(\d\+\)')[1:3]
+    if revision == ''
+      " Error
+      return ['Unknown']
+    elseif flags =~ '^A'
+      return ['New', 'New']
+    elseif flags =~ '*'
+      return [revision, repository, '*']
+    else
+      return [revision, repository]
+    endif
+  catch /^Vim\%((\a\+)\)\=:E/
 		return ['Unknown']
-	elseif flags =~ '^A'
-		return ['New', 'New']
-	elseif flags =~ '*'
-		return [revision, repository, '*']
-	else
-		return [revision, repository]
+  endtry
+endfunction
+
+" Function: s:svnFunctions.GetModificationStatus() {{{2
+" Returns the local status of the buffer. This may be:
+"  '+' for 'locally modified'
+"  'A' for 'locally added'
+"  'R' for 'locally removed'
+"  'M' for 'locally renamed/moved'
+"  'U' for 'not versioned/unknown'
+"  'P' for 'needs patch/outdated'
+"  'I' for 'ignored'
+"  'C' for 'conflicted'
+"  ''  for 'up-to-date'
+
+function! s:svnFunctions.GetModificationStatus()
+	let l:originalBuffer = VCSCommandGetOriginalBuffer(bufnr('%'))
+	let l:fileName = bufname(l:originalBuffer)
+
+	if !filereadable( l:fileName )
+		return g:VCSCOMMAND_MODIFICATION_STATUS_UNKNOWN
 	endif
+
+	let l:oldCwd = VCSCommandChangeToCurrentFileDir( l:fileName )
+  try
+    " Determine current modification status
+    let l:statusText = s:VCSCommandUtility.system(s:Executable() . ' status --non-interactive -vu -- "' . l:fileName . '"')
+    if(v:shell_error)
+      return g:VCSCOMMAND_MODIFICATION_STATUS_ERROR
+    endif
+    let l:statusText = substitute( l:statusText, '^\(.\)\_.*$', '\1', '' )
+
+    if l:statusText == ' '
+      return g:VCSCOMMAND_MODIFICATION_STATUS_UP_TO_DATE
+    elseif l:statusText == 'M' || l:statusText == 'R'
+      return g:VCSCOMMAND_MODIFICATION_STATUS_MODIFIED
+    elseif l:statusText == 'D' || l:statusText == '!'
+      return g:VCSCOMMAND_MODIFICATION_STATUS_REMOVED
+    elseif l:statusText == 'I'
+      return g:VCSCOMMAND_MODIFICATION_STATUS_IGNORED
+    elseif l:statusText == 'A'
+      return g:VCSCOMMAND_MODIFICATION_STATUS_ADDED
+    elseif l:statusText == '?' || l:statusText == 'X'
+      return g:VCSCOMMAND_MODIFICATION_STATUS_UNKNOWN
+    elseif l:statusText == 'C'
+      return g:VCSCOMMAND_MODIFICATION_STATUS_CONFLICTED
+    else
+      return g:VCSCOMMAND_MODIFICATION_STATUS_ERROR
+    endif
+  finally
+		call VCSCommandChdir( l:oldCwd )
+  endtry
 endfunction
 
 " Function: s:svnFunctions.Info(argList) {{{2

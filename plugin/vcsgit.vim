@@ -170,31 +170,102 @@ endfunction
 " Returns: List of results:  [revision, repository, branch]
 
 function! s:gitFunctions.GetBufferInfo()
-	let oldCwd = VCSCommandChangeToCurrentFileDir(resolve(bufname('%')))
-	try
-		let branch = substitute(s:VCSCommandUtility.system(s:Executable() . ' symbolic-ref -q HEAD'), '\n$', '', '')
+	let l:oldCwd = VCSCommandChangeToCurrentFileDir(resolve(bufname('%')))
+	let l:originalBuffer = VCSCommandGetOriginalBuffer(bufnr('%'))
+	let l:fileName = bufname(l:originalBuffer)
+	let l:realFileName = fnamemodify(resolve(l:fileName), ':t')
+	
+  try
+    " Determine current branch
+		let l:branch = substitute(s:VCSCommandUtility.system(s:Executable() . ' symbolic-ref -q HEAD'), '\n$', '', '')
 		if v:shell_error
-			let branch = 'DETACHED'
+			let l:branch = 'DETACHED'
 		else
-			let branch = substitute(branch, '^refs/heads/', '', '')
+			let l:branch = substitute(l:branch, '^refs/heads/', '', '')
 		endif
 
-		let info = [branch]
+		let l:info = [l:branch]
 
-		for method in split(VCSCommandGetOption('VCSCommandGitDescribeArgList', (',tags,all,always')), ',', 1)
-			if method != ''
-				let method = ' --' . method
+    " Determine current tag
+		for l:method in split(VCSCommandGetOption('VCSCommandGitDescribeArgList', (',tags,all,always')), ',', 1)
+			if l:method != ''
+				let l:method = ' --' . l:method
 			endif
-			let tag = substitute(s:VCSCommandUtility.system(s:Executable() . ' describe' . method), '\n$', '', '')
+			let l:tag = substitute(s:VCSCommandUtility.system(s:Executable() . ' describe' . l:method), '\n$', '', '')
 			if !v:shell_error
-				call add(info, tag)
+				call add(l:info, l:tag)
 				break
 			endif
 		endfor
 
-		return info
+		return l:info
 	finally
-		call VCSCommandChdir(oldCwd)
+		call VCSCommandChdir(l:oldCwd)
+	endtry
+endfunction
+
+" Function: s:gitFunctions.GetModificationStatus() {{{2
+" Returns the local status of the buffer. This may be:
+"  '+' for 'locally modified'
+"  'A' for 'locally added'
+"  'R' for 'locally removed'
+"  'M' for 'locally renamed/moved'
+"  'U' for 'not versioned/unknown'
+"  'P' for 'needs patch/outdated'
+"  'I' for 'ignored'
+"  'C' for 'conflicted'
+"  ''  for 'up-to-date'
+
+function! s:gitFunctions.GetModificationStatus()
+	let l:oldCwd = VCSCommandChangeToCurrentFileDir(resolve(bufname('%')))
+	let l:originalBuffer = VCSCommandGetOriginalBuffer(bufnr('%'))
+	let l:fileName = bufname(l:originalBuffer)
+	let l:realFileName = fnamemodify(resolve(l:fileName), ':t')
+
+	if !filereadable( l:fileName )
+		return g:VCSCOMMAND_MODIFICATION_STATUS_UNKNOWN
+	endif
+	
+  try
+    " Determine current modification status
+    " TODO See whether the current file is gitignored
+    let l:status = substitute(s:VCSCommandUtility.system(s:Executable() . ' status "' . l:realFileName . '"'), '\n$', '', '')
+    if !v:shell_error
+      if match( l:status, l:realFileName ) < 0
+        let l:status = g:VCSCOMMAND_MODIFICATION_STATUS_UP_TO_DATE
+      else
+        " Get line with status string
+        let l:lastWord = ''
+        for l:word in split( l:status )
+          if l:word == l:realFileName
+            let l:status = l:lastWord
+            break
+          endif
+
+          let l:lastWord = l:word
+        endfor
+
+        if l:status == 'modified:'
+          let l:status = g:VCSCOMMAND_MODIFICATION_STATUS_MODIFIED
+        elseif l:status == 'renamed:'
+          let l:status = g:VCSCOMMAND_MODIFICATION_STATUS_MOVED
+        elseif l:status == 'deleted:'
+          let l:status = g:VCSCOMMAND_MODIFICATION_STATUS_REMOVED
+        elseif l:status == 'file:' " This is 'new file:' in total
+          let l:status = g:VCSCOMMAND_MODIFICATION_STATUS_ADDED
+        elseif l:status == '#'     " Untracked files are listed without modification hint
+          let l:status = g:VCSCOMMAND_MODIFICATION_STATUS_UNKNOWN
+        else
+          let l:status = g:VCSCOMMAND_MODIFICATION_STATUS_ERROR
+        endif
+      endif
+    else
+      let l:status = g:VCSCOMMAND_MODIFICATION_STATUS_ERROR
+    endif
+
+		return l:status
+	finally
+		call VCSCommandChdir(l:oldCwd)
 	endtry
 endfunction
 

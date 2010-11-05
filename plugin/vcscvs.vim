@@ -316,6 +316,59 @@ function! s:cvsFunctions.GetBufferInfo()
 	endtry
 endfunction
 
+" Function: s:cvsFunctions.GetModificationStatus() {{{2
+" Returns the local status of the buffer. This may be:
+"  '+' for 'locally modified'
+"  'A' for 'locally added'
+"  'R' for 'locally removed'
+"  'M' for 'locally renamed/moved'
+"  'U' for 'not versioned/unknown'
+"  'P' for 'needs patch/outdated'
+"  'I' for 'ignored'
+"  'C' for 'conflicted'
+"  ''  for 'up-to-date'
+
+function! s:cvsFunctions.GetModificationStatus()
+	let l:originalBuffer = VCSCommandGetOriginalBuffer( bufnr( '%' ) )
+	let l:fileName = bufname( l:originalBuffer )
+	let l:realFileName = fnamemodify( resolve( l:fileName ), ':t' )
+	if isdirectory( l:fileName )
+    return g:VCSCOMMAND_MODIFICATION_STATUS_UNKNOWN
+	endif
+	if !filereadable( l:fileName )
+		return g:VCSCOMMAND_MODIFICATION_STATUS_UNKNOWN
+	endif
+	let l:oldCwd = VCSCommandChangeToCurrentFileDir( l:fileName )
+	try
+    " Determine current modification status
+    " TODO See whether the current file is cvsignored
+		let l:statusText = s:VCSCommandUtility.system( s:Executable() . ' status -- "' . l:realFileName . '" | grep "Status:"' )
+		if v:shell_error
+			return g:VCSCOMMAND_MODIFICATION_STATUS_ERROR
+		endif
+		let l:statusText = substitute( l:statusText, '^\_.*Status: \(.*\)\n\_.*$', '\1', '' )
+	
+    if l:statusText == 'Up-to-date'
+      return g:VCSCOMMAND_MODIFICATION_STATUS_UP_TO_DATE
+    elseif l:statusText == 'Locally Modified'
+      return g:VCSCOMMAND_MODIFICATION_STATUS_MODIFIED
+    elseif l:statusText == 'Locally Removed'
+      return g:VCSCOMMAND_MODIFICATION_STATUS_REMOVED
+    elseif l:statusText == 'Locally Added'
+      return g:VCSCOMMAND_MODIFICATION_STATUS_ADDED
+    elseif l:statusText == 'Unknown'
+      return g:VCSCOMMAND_MODIFICATION_STATUS_UNKNOWN
+    elseif l:statusText == 'Needs Patch'
+      return g:VCSCOMMAND_MODIFICATION_STATUS_NEEDS_PATCH
+    else
+      return g:VCSCOMMAND_MODIFICATION_STATUS_ERROR
+    endif
+	finally
+		call VCSCommandChdir( l:oldCwd )
+	endtry
+endfunction
+
+
 " Function: s:cvsFunctions.Log() {{{2
 function! s:cvsFunctions.Log(argList)
 	if len(a:argList) == 0
