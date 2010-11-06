@@ -1295,6 +1295,24 @@ endfunction
 " useful if VCS-managed buffer mode is on (see the VCSCommandEnableBufferSetup
 " variable for how to do this).
 
+"function! VCSCommandGetStatusLine()
+"	if exists('b:VCSCommandCommand')
+"		" This is a result buffer.  Return nothing because the buffer name
+"		" contains information already.
+"		return ''
+"	endif
+"
+"	if exists('b:VCSCommandVCSType')
+"				\ && exists('g:VCSCommandEnableBufferSetup')
+"				\ && g:VCSCommandEnableBufferSetup
+"				\ && exists('b:VCSCommandBufferInfo')
+"		return '[' . join(extend([b:VCSCommandVCSType], b:VCSCommandBufferInfo), ' ') . ']'
+"	else
+"		return ''
+"	endif
+"endfunction
+
+" Helper function for statusbar display
 function! VCSCommandGetStatusLine()
 	if exists('b:VCSCommandCommand')
 		" This is a result buffer.  Return nothing because the buffer name
@@ -1306,7 +1324,33 @@ function! VCSCommandGetStatusLine()
 				\ && exists('g:VCSCommandEnableBufferSetup')
 				\ && g:VCSCommandEnableBufferSetup
 				\ && exists('b:VCSCommandBufferInfo')
-		return '[' . join(extend([b:VCSCommandVCSType], b:VCSCommandBufferInfo), ' ') . ']'
+		let l:result =  '[' . b:VCSCommandVCSType . ': '
+
+		" Show modification status if available
+		if exists( 'b:VCSCommandBufferModificationStatus' ) &&
+			\ b:VCSCommandBufferModificationStatus != ''
+			let l:result .= b:VCSCommandBufferModificationStatus . ', '
+		endif
+
+		" For CVS show current revision and repo revision
+		if b:VCSCommandVCSType ==? 'CVS'
+			if len( b:VCSCommandBufferInfo ) > 1
+				let l:result .= b:VCSCommandBufferInfo[0] . ' ' . b:VCSCommandBufferInfo[1]
+			endif
+
+		" For git show branch
+		elseif b:VCSCommandVCSType ==? 'git'
+			if len( b:VCSCommandBufferInfo ) > 0
+				let l:result .= b:VCSCommandBufferInfo[0]
+			endif
+
+		" Else show everything that we have
+		else
+			let l:result .= join(b:VCSCommandBufferInfo, ' ')
+		endif
+
+		return l:result . ']'
+
 	else
 		return ''
 	endif
